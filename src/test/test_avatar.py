@@ -6,6 +6,7 @@ from subprocess import Popen, PIPE
 import argparse
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from src.model.test_result import TestResult
 from src.validator.arg_validator import validate_arguments
 from src.util.constants import get_model_map, get_extension_map
 from src.helper.model_path_helper import resolve_model_name_for_path
@@ -26,15 +27,7 @@ def main(args, is_algorithm_based_translation):
     files = [f for f in os.listdir(translation_dir) if f.split(".")[-1] in list(get_extension_map().values())]
 
     test_cases_dir = f"dataset/{dataset}/{args.source_lang.capitalize()}/TestCases"
-    
-    test_passed =[]
-    compile_failed = []
-    runtime_failed = []
-    test_failed =[]
-    infinite_loop = []
-    test_failed_details = {}
-    compile_failed_details = {}
-    runtime_failed_details= {}
+    result = TestResult()
 
     if args.target_lang == "python":
         for file in files:
@@ -47,7 +40,7 @@ def main(args, is_algorithm_based_translation):
                 for j in range(1000):
                     if not os.path.exists(f"{test_cases_dir}/{file.split('.')[0]}_{j}.in"):
                         if tests_passed == j:
-                            test_passed.append(file)
+                            result.add_to_test_passed(file)
                         break
 
                     test_case_path = f"{test_cases_dir}/{file.split('.')[0]}_{j}"
@@ -58,7 +51,7 @@ def main(args, is_algorithm_based_translation):
                     try:
                         output, error_data = p.communicate(input=test_input.encode(), timeout=100)
                     except subprocess.TimeoutExpired:
-                        infinite_loop.append(file)
+                        result.add_to_infinite_loop(file)
                         break
 
                     try:            
@@ -82,28 +75,15 @@ def main(args, is_algorithm_based_translation):
 
                         if not error_data.strip():
                             if file not in runtime_failed:
-                                test_failed.append(file)
-
-                                if file not in test_failed_details:
-                                    test_failed_details[file] = []    
-                                test_failed_details[file].append(f"Test Index: {str(j)} Actual: {str(expected_output)} Generated: {str(output)}")
+                                result.add_to_test_failed_with_details(file, expected_output, output, j)
                         else:
                             if file not in test_failed:
-                                runtime_failed.append(file)
-
-                                if file not in runtime_failed_details:
-                                    runtime_failed_details[file] = []
-                                runtime_failed_details[file].append(f"Test Index: {str(j)} Error_type: {str(error_data)}")
+                                result.add_to_runtime_failed_with_details(file, error_data, j)
 
             except subprocess.CalledProcessError as e:
-                compile_failed.append(file)
-
-                if file not in compile_failed_details:
-                    compile_failed_details[file] = []
-                compile_failed_details[file].append(f"Error_type: {str(e.stderr.decode('utf-8'))}")
-            
+                result.add_to_compile_failed_with_details(file, e.stderr.decode('utf-8'))
             except Exception as e:
-                compile_failed.append(file)
+                result.add_to_compile_failed_with_details(file, e)
 
     elif args.target_lang == "java":
         for file in files:
@@ -116,7 +96,7 @@ def main(args, is_algorithm_based_translation):
                 for j in range(1000):
                     if not os.path.exists(f"{test_cases_dir}/{file.split('.')[0]}_{j}.in"):
                         if tests_passed == j:
-                            test_passed.append(file)
+                            result.add_to_test_passed(file)
                         break
 
                     test_case_path = f"{test_cases_dir}/{file.split('.')[0]}_{j}"
@@ -127,7 +107,7 @@ def main(args, is_algorithm_based_translation):
                     try:
                         output, error_data = p.communicate(input=test_input.encode(), timeout=100)
                     except subprocess.TimeoutExpired:
-                        infinite_loop.append(file)
+                        result.add_to_infinite_loop(file)
                         break
 
                     try:
@@ -151,28 +131,16 @@ def main(args, is_algorithm_based_translation):
 
                         if not error_data.strip():
                             if file not in runtime_failed:
-                                test_failed.append(file)
-
-                                if file not in test_failed_details:
-                                    test_failed_details[file] = []
-                                test_failed_details[file].append(f"Test Index: {str(j)} Actual: {str(expected_output)} Generated: {str(output)}")
+                                result.add_to_test_failed_with_details(file, expected_output, output, j)
                         else:
                             if file not in test_failed:
-                                runtime_failed.append(file)
-
-                                if file not in runtime_failed_details:
-                                    runtime_failed_details[file] = []
-                                runtime_failed_details[file].append(f"Test Index: {str(j)} Filename: {file} Error_type: {str(error_data)}")
+                                result.add_to_runtime_failed_with_details(file, error_data, j)
 
             except subprocess.CalledProcessError as e:
-                compile_failed.append(file)
-
-                if file not in compile_failed_details:
-                    compile_failed_details[file] = []
-                compile_failed_details[file].append(f"Error_type: {str(e.stderr.decode('utf-8'))}")
+                result.add_to_compile_failed_with_details(file, e.stderr.decode('utf-8'))
 
             except Exception as e:
-                compile_failed.append(file)
+                result.add_to_compile_failed_with_details(file, e)
                 
         for file in os.listdir(translation_dir):
             if ".class" in file: 
@@ -182,37 +150,10 @@ def main(args, is_algorithm_based_translation):
         print(f"language:{args.target_lang} is not yet supported")
         return
 
-    test_passed = list(set(test_passed))
-    compile_failed = list(set(compile_failed))
-    runtime_failed = list(set(runtime_failed))
-    test_failed = list(set(test_failed))
-    infinite_loop = list(set(infinite_loop))
-
-    for file in test_failed_details:
-        test_failed_details[file] = list(set(test_failed_details[file]))
-
-    for file in compile_failed_details:
-        compile_failed_details[file] = list(set(compile_failed_details[file]))
-
-    for file in runtime_failed_details:
-        runtime_failed_details[file] = list(set(runtime_failed_details[file]))    
-
-    for instance in infinite_loop[:]:
-        if instance in test_failed:
-            infinite_loop.remove(instance)
-
-    result_map = {
-        "test_passed": test_passed,
-        "compile_failed": compile_failed,
-        "runtime_failed": runtime_failed,
-        "test_failed": test_failed,
-        "infinite_loop": infinite_loop,
-        "test_failed_details": test_failed_details,
-        "compile_failed_details": compile_failed_details,
-        "runtime_failed_details": runtime_failed_details
-    }
+    result.cleanup_results()
+    result_map = result.get_result_map()
     organize_translated_codes_by_result(result_map, translation_dir)
-    
+
     os.makedirs(args.report_dir, exist_ok=True)
     report_file_path = Path(args.report_dir).joinpath(f"{model_name_for_path}_{dataset}_from_{args.source_lang}_to_{args.target_lang}_for_{translation_type_for_path}.txt")
     generate_test_report(report_file_path, result_map)

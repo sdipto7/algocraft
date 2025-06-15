@@ -80,13 +80,19 @@ def write_translation_data_to_xlsx(path, columns, data):
 
         logging.info(f"Created csv file: {csv_path} instead due to error in xlsx creation")
 
-def copy_files_to_directories(files, source_dir, target_dir):
+def copy_files_to_directories(files, source_dir, target_dir, keep_source_files=True):
     for file in files:
         source_file = Path(source_dir).joinpath(file)
         target_file = target_dir.joinpath(file)
+
         if source_file.exists():
             try:
-                shutil.copy2(source_file, target_file)
-                logging.info(f"Copied {file} to {target_dir}")
+                if keep_source_files:                
+                    shutil.copy2(source_file, target_file)
+                    logging.info(f"Copied {file} to {target_dir}")
+                else:
+                    shutil.move(source_file, target_file)
+                    logging.info(f"Moved {file} to {target_dir}")
+
             except Exception as e:
                 logging.info(f"Error copying {file} to {target_dir}: {e}")
